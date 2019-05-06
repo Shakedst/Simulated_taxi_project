@@ -1,8 +1,7 @@
 from Pathfinding import find_path
 import time
-import pickle
 
-speedup = 30.0
+speedup = 6.0
 
 class Taxi:
     taxi_id = 1
@@ -30,7 +29,6 @@ class Taxi:
             self.status = 'on the way'
         while self.path:
             #TODO - THINK ABOUT THIS SHIT BETTER PLZ
-            #if self.status == 'cancelled':
             if self.status == 'disabled':
                 self.status = 'available'
                 return
@@ -39,14 +37,15 @@ class Taxi:
             del self.path[0]
             self.battery-=1/3.0
             time.sleep(30.0/speedup)
+        '''
         if 'dest2' in kwargs:
             self.move_to(kwargs['dest2'], obstacles)
         elif self.battery <= 20.0:
             self.go_charge(obstacles)
+        '''
         self.status = 'available'
     
     def go_charge(self, obstacles):
-        #TODO: FIX THIS SHIT IGNORES BUILDINGS
         self.status = 'charging'
         self.move_to((15,10), obstacles) 
         self.status = 'charging'

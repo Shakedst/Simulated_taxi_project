@@ -54,7 +54,7 @@ prev2 = None
 def update_map(x,y,prev,taxi_id):
     global prev2
     flipped_buildings = [(b[1],b[0]) for b in buildings]
-    print prev2
+    #print prev2
     if prev2:      
         if prev2 not in flipped_buildings:
             map_canvas.itemconfig(map_squares[prev2[1]][prev2[0]],fill= 'white')          
@@ -65,7 +65,7 @@ def update_map(x,y,prev,taxi_id):
     map_canvas.create_text((x+0.5)*rect_w,(y+0.5)*rect_h,text=taxi_id,tags='taxi')
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-HOST = '192.168.1.19'
+HOST = '192.168.1.18'
 PORT = 52317
 BUFFSIZE = 1024
 ADDR = (HOST,PORT)
@@ -91,7 +91,6 @@ def delete_buildings():
     send_button['state'] = 'disabled'
     q.put((map_canvas.delete, ('building',), {} ))
     for location in buildings:
-        print location
         try:
             if (location[1],location[0]) == start:
                 map_canvas.itemconfig(map_squares[location[0]][location[1]],fill= 'green')
@@ -126,16 +125,19 @@ def send_request2():
                 if (x,y) == start:
                     has_arrived = True
                 if length >= 1:
-                    print x,y,length
+                    #print x,y,length
                     taxi_time = length*30.0/speedup #In seconds
                     time_str = time.strftime('%H:%M:%S', time.gmtime(taxi_time))
                     if not has_arrived:
-                        print 'Time until taxi arrival:',time_str
+                        #print 'Time until taxi arrival:',time_str
                         top_label['text'] = 'Time until taxi arrival: '+time_str
                     else:
-                        print 'Time until arrival to destination:',time_str
+                        #print 'Time until arrival to destination:',time_str
                         top_label['text'] = 'Time until arrival to destination: '+time_str
                     update_map(x,y,prev,taxi_id)
+            elif data == 'Arrived to destination':
+                top_label['text'] = 'Arrived to destination'
+                update_map(start[0],start[1],prev,taxi_id)
             else:
                 continue
 

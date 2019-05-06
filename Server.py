@@ -7,6 +7,7 @@ import thread
 import socket
 import pickle
 from Taxi import *
+from Request import *
 
 #Time runs in a factor of speedup for instance: if speedup=10, things happen 10 times more quickly
 #speedup is imported from Taxi.py
@@ -33,17 +34,22 @@ for row in range(1,21):
             except:
                 print 'Error',row-1,col,col2
 
-def move_to2(taxi,destination,dst2=None):
-    if dst2:
-        taxi.move_to(destination, flipped_buildings, dest2=dst2)
-    else:
-        taxi.move_to(destination, flipped_buildings)
-
 def go_charge2(taxi):
     taxi.go_charge(flipped_buildings)
 
+def move_to2(taxi,destination,dst2=None, req=None):
+        taxi.move_to(destination, flipped_buildings)
+        if dst2:
+            if req:
+                req.status = 'On the way to destination'
+            taxi.move_to(dst2, flipped_buildings)
+            if req:
+                req.status = 'Done'
+        if taxi.battery <= 20.0:
+            taxi.go_charge(flipped_buildings)
+
+
 my_map[10][15] = 'charging station'
-#buildings.append((10,15))
 buildings.remove((11,15))
 my_map[11][15] = '.' #Wrong mark in excel
 flipped_buildings = [(b[1],b[0]) for b in buildings]
@@ -58,6 +64,8 @@ def calc_distance(pos1,pos2):
     return ((pos2[0]-pos1[0])**2+(pos2[1]-pos1[1])**2)**0.5
 
 requests = []
+handled_requests = []
+
 def handle_requests():
     global clients
     while True:
@@ -65,24 +73,28 @@ def handle_requests():
         if available_taxies:
             for i in range(len(available_taxies)):
                 if requests:
-                    c_id,start,end = requests.pop(0)
+                    request = requests.pop(0)
+                    c_id, start, end = request.client_id, request.start, request.end
                     closest_taxi = min(available_taxies, key=lambda taxi:calc_distance((taxi.x,taxi.y),start))
-                    thread.start_new_thread(move_to2,(closest_taxi, start, end))
+                    thread.start_new_thread(move_to2,(closest_taxi, start, end, request))
                     closest_taxi.client = c_id
-                    #closest_taxi_string = pickle.dumps(closest_taxi)
-                    #clients[c_id].send('Sent taxi:'+closest_taxi_string)
+                    request.status = 'On the way to client'
+                    request.taxi = closest_taxi
+                    handled_requests.append(request)
                     print 'Sent taxi',taxies.index(closest_taxi),'to pick up from',start,'and go to',end
                     print requests
         if requests:
             for request in requests:
-                c_id = request[0]
+                request.status = 'Waiting for taxi'
+                c_id = request.client_id
+                print c_id, 'waiting for taxi'
                 clients[c_id].send('No taxi available at the moment')
         time.sleep(0.5)
     
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #Creating and binding the server
 BUFFSIZE = 1024*5
-HOST = '192.168.1.19'
+HOST = '192.168.1.18'
 PORT = 52317
 ADDR = (HOST,PORT)
 server = socket.socket(socket.AF_INET,socket.SOCK_STREAM) 
@@ -126,6 +138,7 @@ def charge_taxi2_test_lmao():
 
 def stop_test():
     time.sleep(10.0)
+    print 'Told taxi0 to stop'
     taxies[0].stop()
 
 global admins,admin_id
@@ -138,9 +151,8 @@ def admin_handler(clientsock, addr):
     buildings_string = pickle.dumps(buildings)
     clientsock.send(buildings_string)
     while True:
-        taxies_string = pickle.dumps(taxies)
-        requests_string = pickle.dumps(requests)
-        data = taxies_string+',,,,,'+requests_string
+        data_dic = {'taxies': taxies, 'requests': requests, 'handled_requests': handled_requests}
+        data = pickle.dumps(data_dic)
         try:
             clientsock.send(data)
         except:
@@ -166,28 +178,30 @@ def client_handler(clientsock,addr):
         else:
             data = data.replace('Request:','')
             start,end = pickle.loads(data)
-            request = (curr_id,start,end)
+            request = Request(curr_id, start, end)
             requests.append(request)
             print 'Added request, requests now:',requests
             break
         time.sleep(0.5)
     while True:
-        if request not in requests:
-            taxi = filter(lambda t:t.client==curr_id, taxies)[0]
+        if request in handled_requests: 
+            taxi = request.taxi
             if taxi.path:
                 taxi_info_tuple = (taxi.x, taxi.y, len(taxi.path), taxi.prev, taxi.taxi_id)
                 #TODO - maybe pass taxi's path and then paint it in orange in client
                 taxi_string = pickle.dumps(taxi_info_tuple)
                 clientsock.send('Your taxi:'+taxi_string)
-        time.sleep(1.0)
+            if (taxi.x,taxi.y) == end:
+                clientsock.send('Arrived to destination')
+        time.sleep(0.5)
         
 
 thread.start_new_thread(handle_requests,())
 thread.start_new_thread(wait_for_connection, (server,))
 thread.start_new_thread(move_taxi0_test_lmao,())
-#thread.start_new_thread(move_taxi1_test_lmao,())
-#thread.start_new_thread(charge_taxi2_test_lmao,())
-thread.start_new_thread(stop_test,())
+thread.start_new_thread(move_taxi1_test_lmao,())
+thread.start_new_thread(charge_taxi2_test_lmao,())
+#thread.start_new_thread(stop_test,())
 
 while True:
     pass

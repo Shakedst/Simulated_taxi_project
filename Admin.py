@@ -4,6 +4,11 @@ import pickle
 import thread
 import time
 from Taxi import Taxi
+from Request import *
+import traceback
+from Queue import *
+
+q = Queue()
 
 map_squares = [['.' for x in range(30)] for y in range(20)]
 root = Tk()
@@ -67,9 +72,55 @@ def update_taxies_states(taxies,taxies_state_frame,total):
     total_info = 'Total available: {0}\nTotal on the way: {1}\nTotal charging: {2}\nTotal disabled: {3}'.format(*info_dict.values())
     total['text'] = total_info
     
-    
+requests_frame = Frame(map_frame)
+req_info = 'client id: {} \t current position:{},{} \t start:{},{} \t status: {}'.format('','','','','','')
+#Label(requests_frame, text=req_info, height=2, bd=1, relief='solid').pack(side=TOP, fill="both")
+req_total_info = 'Total in service: {} \t Total waiting: {} \t Total unhandled requests: {}'.format('','','')
+total_reqs = Label(requests_frame, text = req_total_info, height=2, bd=1, relief='solid')
+total_reqs.pack(side=BOTTOM, fill = 'both')
+requests_frame.pack(side=BOTTOM, expand="YES", fill="both")
+
+requests_labels = []
+def update_requests_frame(requests, handled_requests, requests_frame, total_reqs):
+    #requests_labels = filter(lambda x:'Total' not in x['text'],requests_frame.winfo_children())
+    #for r in requests_labels:
+    #    print 'Request label:',r['text'],'\n'
+    handled_requests = filter(lambda req:req.status!='Done', handled_requests)
+    total_requests = list(requests + handled_requests)
+    waiting_clients = filter(lambda req:'to client' in req.status, handled_requests)
+    on_the_way_clients = filter(lambda req:'to destination' in req.status, handled_requests)
+    print [req.status for req in total_requests]
+    if len(requests_labels) == len(total_requests):
+        for i,req in enumerate(total_requests):
+            if req in waiting_clients:
+                req_info = 'client id: {} \t current position:{},{} \t start:{},{}  \t status: {}'.format(req.client_id, req.taxi.x, 
+                    req.taxi.y, req.start[0], req.start[1], req.status)
+                requests_labels[i]['text'] = req_info
+            elif req in on_the_way_clients:
+                req_info = 'client id: {} \t current position:{},{} \t end:{},{}  \t status: {}'.format(req.client_id, req.taxi.x, 
+                    req.taxi.y, req.end[0], req.end[1], req.status)
+                requests_labels[i]['text'] = req_info
+    elif len(requests_labels) < len(total_requests):
+        for i in range(len(total_requests)-len(requests_labels)):
+            req = total_requests[-1-i]    
+            req_info = 'client id: {} \t start: ({},{}) \t status: {}'.format(req.client_id, req.start[0], req.start[1], req.status)
+            w = Label(requests_frame, text=req_info, height=2, bd=1, relief='solid')
+            w.pack(side=TOP, fill="both")
+            requests_labels.append(w)
+    else:
+        for i in range(len(requests_labels)-len(total_requests)):
+            w = requests_labels[i]
+            #print requests_labels[i]['text']
+            print w['text']
+            q.put((w.destroy, (), {} ))
+            #q.put((requests_labels[i].destroy, (), {} ))
+            del requests_labels[i]
+            #requests_labels[i].destroy()
+    req_total_info = 'Total in service: {} \t Total waiting: {} \t Total unhandled requests: {}'.format(len(on_the_way_clients),len(waiting_clients),len(requests))
+    total_reqs['text'] = req_total_info
+
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-HOST = '192.168.1.19'
+HOST = '192.168.1.18'
 PORT = 52317
 BUFFSIZE = 1024*5
 ADDR = (HOST,PORT)
@@ -82,29 +133,38 @@ def server_stuff():
     buildings = pickle.loads(buildings_string)
     for b in buildings:
         row,col = b[0],b[1]
-        map_canvas.itemconfig(map_squares[row][col],fill= 'blue')
-    map_canvas.itemconfig(map_squares[10][15],fill= 'yellow')
+        map_canvas.itemconfig(map_squares[row][col], fill= 'blue')
+    map_canvas.itemconfig(map_squares[10][15], fill= 'yellow')
     while True:
         data = clientsock.recv(BUFFSIZE)
         try:
             #TODO - Understand why this shit sometimes doesnt work
-            taxies_string, requests_string = data.split(',,,,,')
+            data_dic = pickle.loads(data)
+            taxies, requests, handled_requests = data_dic['taxies'], data_dic['requests'], data_dic['handled_requests']
         except:
-            print data
+            #print [data]
+            print traceback.format_exc()
             continue
-        #taxies_string = clientsock.recv(BUFFSIZE)
-        taxies = pickle.loads(str(taxies_string))
-        requests = pickle.loads(str(requests_string))
-        for taxi in taxies:
-            print 'ID',taxi.taxi_id,'x:',taxi.x,'y:',taxi.y,'prev:',taxi.prev,'status:',taxi.status
-        print
+        #for taxi in taxies:
+        #    print 'ID',taxi.taxi_id,'x:',taxi.x,'y:',taxi.y,'prev:',taxi.prev,'status:',taxi.status
+        #print
         if requests:
-            #TODO - Recolor buildings who dont have a client waiting anymore
             for req in requests:
-                map_canvas.itemconfig(map_squares[req[1][1]][req[1][0]],fill = 'IndianRed1')
-        update_taxies_states(taxies,taxies_state_frame,total)
+                start = req.start
+                map_canvas.itemconfig(map_squares[start[1]][start[0]], fill = 'IndianRed1')
+        update_taxies_states(taxies, taxies_state_frame, total)
+        update_requests_frame(requests, handled_requests, requests_frame, total_reqs)
         update_map(buildings, taxies)
             
+def tkloop():
+    try:
+        while True:
+            f, a, k = q.get_nowait()
+            f(*a, **k)
+    except:
+        pass
+    root.after(100, tkloop)
 
 thread.start_new_thread(server_stuff,())
+tkloop()
 root.mainloop()
